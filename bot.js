@@ -19,11 +19,15 @@ const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
-let CHANNEL_ID = process.env.CHANNEL_ID || "1295247108001103974";
+// IMPORTANT:
+// Set CHANNEL_ID in Railway Variables after you choose the main server channel.
+// You can also use /setchannel while the bot is running, but Railway restarts will reset it unless CHANNEL_ID is saved in Variables.
+let CHANNEL_ID = process.env.CHANNEL_ID || null;
 
-const ROLE_ID = "1301948099958280303";
-const ADMIN_ROLE_ID = "1245717784542052433";
-const OWNER_ROLE_ID = "1240660412647866378";
+// Main server role IDs
+const ROLE_ID = "1467367287009972244";
+const ADMIN_ROLE_ID = "1467556289864274012";
+const OWNER_ROLE_ID = "1467292070938152960";
 
 const TIME_ZONE = "America/New_York";
 
@@ -37,11 +41,16 @@ const SCHEDULE = [
 
 function hasManagementRole(interaction) {
   try {
-    return (
-      interaction.member.roles.cache.has(ADMIN_ROLE_ID) ||
-      interaction.member.roles.cache.has(OWNER_ROLE_ID)
-    );
-  } catch {
+    if (interaction.guild && interaction.guild.ownerId === interaction.user.id) {
+      return true;
+    }
+
+    const roles = interaction.member?.roles?.cache;
+    if (!roles) return false;
+
+    return roles.has(ADMIN_ROLE_ID) || roles.has(OWNER_ROLE_ID);
+  } catch (err) {
+    console.error("ROLE CHECK ERROR:", err);
     return false;
   }
 }
@@ -140,6 +149,11 @@ function buildDateEmbed() {
 }
 
 async function sendDateAlert() {
+  if (!CHANNEL_ID) {
+    console.error("SEND ERROR: CHANNEL_ID is not set. Use /setchannel or set CHANNEL_ID in Railway Variables.");
+    return;
+  }
+
   const channel = await client.channels.fetch(CHANNEL_ID);
   const embed = buildDateEmbed();
 
@@ -156,6 +170,8 @@ function scheduleNextMessage() {
   if (!nextTime) return setTimeout(scheduleNextMessage, 60000);
 
   const delay = nextTime.getTime() - Date.now();
+
+  console.log("Next Goos Date scheduled for:", nextTime.toISOString());
 
   setTimeout(async () => {
     try {
@@ -181,7 +197,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("setchannel")
-    .setDescription("Set the Goos Date channel")
+    .setDescription("Set the Goos Date channel to this channel")
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
   new SlashCommandBuilder()
@@ -212,13 +228,19 @@ client.on("interactionCreate", async interaction => {
   if (interaction.commandName === "status") {
     if (!hasManagementRole(interaction)) {
       return interaction.reply({
-        content: "Admin/Owner only command.",
+        content: "Admin/Co-owner only command.",
         ephemeral: true
       });
     }
 
+    const next = getNextScheduledTime();
+    const unix = next ? Math.floor(next.getTime() / 1000) : null;
+
     return interaction.reply({
-      content: `Bot is online.\nCurrent channel: <#${CHANNEL_ID}>`,
+      content:
+        `Bot is online.\n` +
+        `Current channel: ${CHANNEL_ID ? `<#${CHANNEL_ID}>` : "Not set"}\n` +
+        `Next Goos Date: ${unix ? `<t:${unix}:t> (<t:${unix}:R>)` : "Not found"}`,
       ephemeral: true
     });
   }
@@ -226,7 +248,7 @@ client.on("interactionCreate", async interaction => {
   if (interaction.commandName === "testping") {
     if (!hasManagementRole(interaction)) {
       return interaction.reply({
-        content: "Admin/Owner only command.",
+        content: "Admin/Co-owner only command.",
         ephemeral: true
       });
     }
@@ -242,7 +264,7 @@ client.on("interactionCreate", async interaction => {
   if (interaction.commandName === "setchannel") {
     if (!hasManagementRole(interaction)) {
       return interaction.reply({
-        content: "Admin/Owner only command.",
+        content: "Admin/Co-owner only command.",
         ephemeral: true
       });
     }
@@ -250,7 +272,10 @@ client.on("interactionCreate", async interaction => {
     CHANNEL_ID = interaction.channelId;
 
     return interaction.reply({
-      content: `Goos Date channel set to <#${CHANNEL_ID}>`,
+      content:
+        `Goos Date channel set to <#${CHANNEL_ID}>.\n\n` +
+        `Important: to keep this after Railway restarts, add this Railway Variable:\n` +
+        `CHANNEL_ID=${CHANNEL_ID}`,
       ephemeral: true
     });
   }
