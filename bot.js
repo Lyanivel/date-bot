@@ -4,7 +4,8 @@ const {
   EmbedBuilder,
   REST,
   Routes,
-  SlashCommandBuilder
+  SlashCommandBuilder,
+  PermissionFlagsBits
 } = require("discord.js");
 
 const client = new Client({
@@ -18,9 +19,12 @@ const TOKEN = process.env.TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
-const CHANNEL_ID = "1295247108001103974";
+let CHANNEL_ID = process.env.CHANNEL_ID || "1295247108001103974";
+
 const ROLE_ID = "1301948099958280303";
-const STAFF_ROLE_ID = "1240660412647866378";
+const ADMIN_ROLE_ID = "1245717784542052433";
+const OWNER_ROLE_ID = "1240660412647866378";
+
 const TIME_ZONE = "America/New_York";
 
 const SCHEDULE = [
@@ -31,9 +35,12 @@ const SCHEDULE = [
   "22:02","22:22","23:03","23:33"
 ];
 
-function hasStaffRole(interaction) {
+function hasManagementRole(interaction) {
   try {
-    return interaction.member.roles.cache.has(STAFF_ROLE_ID);
+    return (
+      interaction.member.roles.cache.has(ADMIN_ROLE_ID) ||
+      interaction.member.roles.cache.has(OWNER_ROLE_ID)
+    );
   } catch {
     return false;
   }
@@ -151,24 +158,50 @@ function scheduleNextMessage() {
   const delay = nextTime.getTime() - Date.now();
 
   setTimeout(async () => {
-    await sendDateAlert();
+    try {
+      await sendDateAlert();
+    } catch (err) {
+      console.error("SEND ERROR:", err);
+    }
+
     scheduleNextMessage();
   }, Math.max(delay, 0));
 }
 
 const commands = [
-  new SlashCommandBuilder().setName("status").setDescription("Bot status"),
-  new SlashCommandBuilder().setName("testping").setDescription("Test ping"),
-  new SlashCommandBuilder().setName("nextdate").setDescription("Next date")
+  new SlashCommandBuilder()
+    .setName("status")
+    .setDescription("Bot status")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+  new SlashCommandBuilder()
+    .setName("testping")
+    .setDescription("Test ping")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+  new SlashCommandBuilder()
+    .setName("setchannel")
+    .setDescription("Set the Goos Date channel")
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+
+  new SlashCommandBuilder()
+    .setName("nextdate")
+    .setDescription("Next date")
 ].map(cmd => cmd.toJSON());
 
 async function registerCommands() {
   const rest = new REST({ version: "10" }).setToken(TOKEN);
-  await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
+
+  await rest.put(
+    Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+    { body: commands }
+  );
+
+  console.log("Slash commands registered.");
 }
 
 client.once("ready", async () => {
-  console.log("Logged in");
+  console.log(`Logged in as ${client.user.tag}`);
   await registerCommands();
   scheduleNextMessage();
 });
@@ -177,30 +210,69 @@ client.on("interactionCreate", async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
   if (interaction.commandName === "status") {
-    if (!hasStaffRole(interaction)) {
-      return interaction.reply({ content: "Staff only command.", ephemeral: true });
+    if (!hasManagementRole(interaction)) {
+      return interaction.reply({
+        content: "Admin/Owner only command.",
+        ephemeral: true
+      });
     }
 
-    return interaction.reply({ content: "Bot is online.", ephemeral: true });
+    return interaction.reply({
+      content: `Bot is online.\nCurrent channel: <#${CHANNEL_ID}>`,
+      ephemeral: true
+    });
   }
 
   if (interaction.commandName === "testping") {
-    if (!hasStaffRole(interaction)) {
-      return interaction.reply({ content: "Staff only command.", ephemeral: true });
+    if (!hasManagementRole(interaction)) {
+      return interaction.reply({
+        content: "Admin/Owner only command.",
+        ephemeral: true
+      });
     }
 
     await sendDateAlert();
-    return interaction.reply({ content: "Sent.", ephemeral: true });
+
+    return interaction.reply({
+      content: "Test ping sent.",
+      ephemeral: true
+    });
+  }
+
+  if (interaction.commandName === "setchannel") {
+    if (!hasManagementRole(interaction)) {
+      return interaction.reply({
+        content: "Admin/Owner only command.",
+        ephemeral: true
+      });
+    }
+
+    CHANNEL_ID = interaction.channelId;
+
+    return interaction.reply({
+      content: `Goos Date channel set to <#${CHANNEL_ID}>`,
+      ephemeral: true
+    });
   }
 
   if (interaction.commandName === "nextdate") {
     const next = getNextScheduledTime();
+
+    if (!next) {
+      return interaction.reply({
+        content: "No next date found."
+      });
+    }
+
     const unix = Math.floor(next.getTime() / 1000);
 
     return interaction.reply({
-      content: `<t:${unix}:t> (<t:${unix}:R>)`
+      content: `Next Goos Date is <t:${unix}:t> (<t:${unix}:R>)`
     });
   }
 });
+
+client.on("error", console.error);
+process.on("unhandledRejection", console.error);
 
 client.login(TOKEN);
