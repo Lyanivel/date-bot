@@ -29,7 +29,7 @@ const ROLE_ID = "1467367287009972244";
 const ADMIN_ROLE_ID = "1467556289864274012";
 const OWNER_ROLE_ID = "1467292070938152960";
 
-const TIME_ZONE = "America/New_York";
+const TIME_ZONE = "UTC";
 
 const SCHEDULE = [
   '00:00',
